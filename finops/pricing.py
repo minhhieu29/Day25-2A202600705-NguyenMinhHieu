@@ -60,14 +60,29 @@ def break_even_utilization(discount_frac: float) -> float:
     return max(0.0, min(1.0, 1.0 - discount_frac))
 
 
-def recommend_tier(hours_per_day: float, interruptible: bool, reserved_discount: float = 0.45) -> str:
+def recommend_tier(
+    hours_per_day: float,
+    interruptible: bool,
+    reserved_discount: float = 0.45,
+    gpu_type: str | None = None,
+    job_days: float | None = None,
+) -> str:
     """Pick a purchasing tier from a workload's duty cycle + interruptibility.
 
-    DOCUMENTED simple policy (instructor extension point — swap in your own):
-      - interruptible & not 24/7  -> 'spot'      (checkpoint and ride the discount)
-      - duty cycle >= break-even  -> 'reserved'  (steady, high utilization)
-      - otherwise                 -> 'on_demand' (spiky / low duty)
+    Advanced policy (Extension 1):
+      - If job_days is short (e.g. < 30 days), we refuse to recommend 'reserved'
+        because buying Reserved instances commits us to 1 or 3 years, which is extremely
+        wasteful for short-lived training/finetuning tasks, even if they run 24h/day.
+      - If it is interruptible and not 24/7 -> 'spot'.
+      - If duty cycle >= break-even -> 'reserved'.
+      - otherwise -> 'on_demand'.
     """
+    if job_days is not None and job_days < 30:
+        if interruptible:
+            return "spot"
+        else:
+            return "on_demand"
+
     duty = max(0.0, hours_per_day) / 24.0
     be = break_even_utilization(reserved_discount)
     if interruptible and hours_per_day < 24:
